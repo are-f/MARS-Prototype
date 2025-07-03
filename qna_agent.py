@@ -11,7 +11,7 @@ from doc_loader import pdf_loader, docx_loader, txt_loader
 # Load environment variables
 load_dotenv()
 
-# chats Database--------------------------------------------- Dummy data--------------------------------------
+# chats Database--------------------------------------------- Dummy data-------------------------------------------------
 # --------------------------------------------------------FETCH FROM DATABASE--------------------------------------------
 chats = {
     1: [
@@ -32,7 +32,7 @@ chats = {
         AIMessage(content="To further your understanding of RAG, I recommend exploring specific implementations and use cases. Look into open-source RAG frameworks like LangChain and LlamaIndex, as they provide practical examples and tools for building RAG pipelines. Also, consider investigating how RAG is being applied in different industries, such as healthcare, finance, and e-commerce, to understand its real-world impact. Finally, keep an eye on research papers and blog posts that discuss the latest advancements and challenges in RAG, as the field is constantly evolving.\n```")]
 
 }
-# ---------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------------------
 
 # Memory for chat history
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
@@ -52,7 +52,7 @@ else:
 
 retriever = None
 if vector_store:
-    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 4})
+    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
 
 # QnA Agent Function
 def qna_agent_response(query: str):
@@ -65,7 +65,7 @@ def qna_agent_response(query: str):
     )
 
     prompt = hub.pull("hwchase17/react-chat")
-    agent_tools = [tool]
+    agent_tools = [search_tool,tool]
 
     agent = create_react_agent(llm=llm, tools=agent_tools, prompt=prompt)
 
