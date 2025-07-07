@@ -7,38 +7,33 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain.memory import ConversationBufferMemory
 from langchain import hub
 from doc_loader import pdf_loader, docx_loader, txt_loader
+import tiktoken
+from langchain_community.tools.tavily_search import TavilySearchResults
 
-# Load environment variables
+
+# Load .env and Gemini API
 load_dotenv()
 
-# chats Database--------------------------------------------- Dummy data-------------------------------------------------
-# --------------------------------------------------------FETCH FROM DATABASE--------------------------------------------
+# Initialize chat history (mock DB)
 chats = {
-    1: [
-        HumanMessage(content="Translate from English to French: I love programming."),
-        AIMessage(content="J'adore la programmation."),
-        HumanMessage(content="What did you just say?"),
-    ],
-    2: [
-        HumanMessage(content="Tell me about the Major Cities"),
-        AIMessage(content="It's NewYork, Paris, Bejing, Hongkong"),
-        HumanMessage(content="What did you just say?"),
-    ],
-    3: [HumanMessage(content='Tell me about RAG'),
-        AIMessage(content='Retrieval-Augmented Generation (RAG) is an innovative approach in natural language processing (NLP) that enhances the quality of generated text by combining retrieval-based and generation-based models. It augments Large Language Models (LLMs) by adding an information retrieval system, giving control over the grounding data used when formulating a response. RAG allows for incorporating current, domain-specific data into language model-based applications. Key practices used across the RAG pipeline include full-text search, vector search, chunking, hybrid search, query rewriting, and re-ranking.'), 
-        HumanMessage(content='How can I learn it'), 
-        AIMessage(content='You can learn about Retrieval-Augmented Generation (RAG) through resources that explain how it combines retrieval-based and generation-based models to enhance the quality of generated text. Look for information on how RAG systems access and incorporate external knowledge sources in real-time to provide accurate and contextually relevant information. Several articles and guides online cover the workings, applications, benefits, and best practices of RAG. Also, consider exploring how RAG patterns are used in platforms like Azure AI Search solutions.'), 
-        HumanMessage(content='okay anything else you want to recommend'), 
-        AIMessage(content="To further your understanding of RAG, I recommend exploring specific implementations and use cases. Look into open-source RAG frameworks like LangChain and LlamaIndex, as they provide practical examples and tools for building RAG pipelines. Also, consider investigating how RAG is being applied in different industries, such as healthcare, finance, and e-commerce, to understand its real-world impact. Finally, keep an eye on research papers and blog posts that discuss the latest advancements and challenges in RAG, as the field is constantly evolving.\n```")]
-
+    1: [HumanMessage(content="Translate from English to French: I love programming."),
+        AIMessage(content="J'adore la programmation.")]
 }
-# ----------------------------------------------------------------------------------------------------------------------
 
-# Memory for chat history
+# Memory for chat
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
-# File path and loader
-path = input("Enter File path: ")
+# Token tracker for session
+total_tokens = 0
+TOKEN_LIMIT = 10000
+
+# Token counting function
+def count_tokens(text, model="gpt-4-1106-preview"): # gpt-3.5-turbo"):
+    enc = tiktoken.encoding_for_model(model)
+    return len(enc.encode(text))
+
+# File loader and retriever
+path = input("Enter file path: ").strip()
 extension = path.split('.')[-1].lower()
 
 if extension == "pdf":
@@ -50,52 +45,78 @@ elif extension == "txt":
 else:
     vector_store = None
 
-retriever = None
-if vector_store:
-    retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3}) if vector_store else None
 
-# QnA Agent Function
-def qna_agent_response(query: str):
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+# AI agent function with RAG + Search + Token Tracking
+def qna_agent_response(query: str, current_total: int):
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+
     search_tool = DuckDuckGoSearchRun()
-    tool = Tool(
+    web_search = Tool(
         name="Search",
         func=search_tool.run,
         description="Use this tool to look up information on the web ONLY when needed."
-    )
+    # )
+
+    
+    # # Tavily Web Search Tool
+    # search_tool = TavilySearchResults()
+    # web_search = Tool(
+    #     name="TavilySearch",
+    #     func=search_tool.run,
+    #     description="Useful for answering questions about current events or factual topics from the web."
+    # )
 
     prompt = hub.pull("hwchase17/react-chat")
-    agent_tools = [search_tool,tool]
 
-    agent = create_react_agent(llm=llm, tools=agent_tools, prompt=prompt)
+    agent = create_react_agent(llm=llm, tools=[web_search], prompt=prompt)
 
     agent_executor = AgentExecutor(
         agent=agent,
-        tools=agent_tools,
+        tools=[web_search],
         memory=memory,
         verbose=True,
         handle_parsing_errors=True
     )
 
+    original_query = query
+
     if retriever:
         docs = retriever.invoke(query)
-        # Combine context from documents
-        doc_context = "\n".join([d.page_content for d in docs])
-        query = f"Answer based on the following context:\n{doc_context}\n\nQuery: {query}"
+        context = "\n".join([d.page_content for d in docs])
+        query = f"Answer based on the following context:\n{context}\n\nQuery: {original_query}"
 
+    # Count input tokens
+    input_tokens = count_tokens(query)
+
+    # Run the agent
     result = agent_executor.invoke({'input': query})
-    return result
+    output = result["output"]
 
-# Interaction Loop
+    # Count output tokens
+    output_tokens = count_tokens(output)
+    session_tokens = input_tokens + output_tokens
+
+    print(f"Input Tokens: {input_tokens} | Output Tokens: {output_tokens} | This Turn: {session_tokens}")
+    return result, session_tokens
+
+# Chat Loop
 while True:
-    query = input("Enter your Query: ")
+    query = input("\n Enter your query (or 'exit' to quit): ")
     if query.lower() in ["exit", "quit", "thank you", "bye"]:
-        chats[list(chats.keys())[-1] + 1] = memory.chat_memory.messages #--------------------Update in database SAVE ON BACKEND
-        print("Good Bye!")
-        print(chats)
+        chats[max(chats.keys()) + 1] = memory.chat_memory.messages
+        print("\n Goodbye! Your chat has been saved.\n")
+        print("Session Memory:\n", chats)
         break
+
+    if total_tokens >= TOKEN_LIMIT:
+        print(f" Token limit reached ({TOKEN_LIMIT} tokens). Please wait or start a new session.")
+        break
+
     try:
-        result = qna_agent_response(query)
-        print(result["output"])
+        result, used_tokens = qna_agent_response(query, total_tokens)
+        total_tokens += used_tokens
+        print(f"\n Total Tokens Used This Session: {total_tokens}")
+        print("", result["output"])
     except Exception as e:
         print("Error:", e)
