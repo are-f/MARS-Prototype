@@ -1,4 +1,4 @@
-from langchain_community.document_loaders import PyMuPDFLoader,UnstructuredWordDocumentLoader,TextLoader
+from langchain_community.document_loaders import PyMuPDFLoader, Docx2txtLoader,TextLoader
 from RAG_Logic import create_vector
 
 
@@ -11,10 +11,9 @@ def pdf_loader(file_path):
     
     
 def docx_loader(file_path):
-    loader = UnstructuredWordDocumentLoader(file_path=file_path)
+    loader = Docx2txtLoader(file_path)
     docs = loader.load()
-    docx_vector_store = create_vector(docs)
-    return docx_vector_store
+    return create_vector(docs)
     
 def txt_loader(file_path):
     loader = TextLoader(file_path=file_path)
