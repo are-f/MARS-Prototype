@@ -24,8 +24,8 @@ chats = {
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
 # Token tracker for session
-total_tokens = 0
-TOKEN_LIMIT = 10000
+total_tokens = 50000
+TOKEN_LIMIT = 100000
 
 # Token counting function
 def count_tokens(text, model="gpt-4-1106-preview"): # gpt-3.5-turbo"):
@@ -49,14 +49,14 @@ retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"
 
 # AI agent function with RAG + Search + Token Tracking
 def qna_agent_response(query: str, current_total: int):
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
 
     search_tool = DuckDuckGoSearchRun()
     web_search = Tool(
         name="Search",
         func=search_tool.run,
         description="Use this tool to look up information on the web ONLY when needed."
-    # )
+    )
 
     
     # # Tavily Web Search Tool
